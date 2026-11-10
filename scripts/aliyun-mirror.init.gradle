@@ -1,0 +1,40 @@
+// 本文件将安卓构建及嵌套插件构建的官方 Maven 仓库切换到阿里云镜像。
+
+// 同时处理已声明和后续添加的仓库，覆盖 React Native 的 includeBuild 插件。
+def useMirrors = { repositories ->
+    repositories.withType(org.gradle.api.artifacts.repositories.MavenArtifactRepository).configureEach { repository ->
+        def address = repository.url.toString()
+        if (address.startsWith('https://repo.maven.apache.org/maven2') || address.startsWith('https://repo1.maven.org/maven2')) {
+            repository.setUrl('https://maven.aliyun.com/repository/central/')
+        } else if (address.contains('maven.google.com') || address.startsWith('https://dl.google.com/dl/android/maven2')) {
+            repository.setUrl('https://maven.aliyun.com/repository/google/')
+        } else if (address.startsWith('https://plugins.gradle.org/m2')) {
+            repository.setUrl('https://maven.aliyun.com/repository/gradle-plugin/')
+        }
+    }
+}
+
+beforeSettings { settings ->
+    useMirrors(settings.pluginManagement.repositories)
+}
+settingsEvaluated { settings ->
+    useMirrors(settings.pluginManagement.repositories)
+    useMirrors(settings.dependencyResolutionManagement.repositories)
+}
+allprojects { project ->
+    useMirrors(project.buildscript.repositories)
+    useMirrors(project.repositories)
+    // Windows 深层 node_modules 路径会超过 Ninja 限制，提前触发对象路径哈希。
+    if (System.getProperty('os.name').toLowerCase().contains('windows')) {
+        ['com.android.library', 'com.android.application'].each { pluginId ->
+            project.pluginManager.withPlugin(pluginId) {
+                def android = project.extensions.getByName('android')
+                android.defaultConfig.externalNativeBuild.cmake.arguments.add('-DCMAKE_OBJECT_PATH_MAX=240')
+                // 同时缩短中间目录；只限制长度不足以处理较深的对象文件根目录。
+                def workspaceId = Integer.toHexString(project.rootDir.absolutePath.hashCode())
+                def driveRoot = project.rootDir.toPath().root.toFile()
+                android.externalNativeBuild.cmake.buildStagingDirectory = new File(driveRoot, "pindo-cxx/${workspaceId}/${Integer.toHexString(project.path.hashCode())}")
+            }
+        }
+    }
+}
