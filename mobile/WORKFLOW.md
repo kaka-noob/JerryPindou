@@ -1,5 +1,9 @@
 # 手机端工作流改版
 
+2026-11-10 构建流程核验：参考 InnkrBleUartRn，两个打包入口内置 JS，debug 使用独立包名 `.debug` 并关闭 Metro 加载。版本与构建号统一从根目录 `package.json` 的 `version` / `buildNumber` 读取，当前为 1.0.2 / 3；手机 package 不再单独存版本。默认只构建 arm64 和应用 assemble 目标，保留原生缓存；共用 `lib`、根目录版本与资源均纳入 JS 打包依赖，排除 `.expo` 临时脚本。导出前校验 APK 内部版本、包名、内置 JS 和签名，输出带类型、版本、构建号和哈希的 APK 到 `releases`。
+
+本轮 debug / release 均构建成功；增量 debug 约 74 秒、release 约 57 秒（当前电脑测量，不保证其他机器或首次构建速度）。正式包 49,075,350 字节，内置名称为“拼小兔”，1.0.2 / 3，签名验证通过，图标经解包确认是淡紫底拼豆小兔。APK 的 JS 与生成 bundle 哈希一致，source map 中参数页和滑块组件与当前源码一致，包含最长边滑块及 community slider；TypeScript、ESLint、35 项算法测试通过。无已连接设备，尚未验证手机安装器缓存、桌面显示和真机滑动外观；不要把截图中的旧 1.0.0 当作本次包验收。
+
 2026-11-10 品牌更新：应用显示名称改为“拼小兔”，应用图标采用本次确认的淡紫底拼豆小兔，资源为 `assets/pin-xiao-tu-icon.png`（1024×1024）。重新构建安装包后生效。
 
 2026-11-10：按迁移对话中已确认的方案实现。用户随后授权构建签名 release APK；应用名称为“杰瑞拼豆”，包名 `com.jerry.pindou`，图标使用用户提供的 `assets/jerry-icon.png`。

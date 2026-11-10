@@ -1,19 +1,21 @@
 // 本文件配置 Pindo 原生应用名称、安装标识、图标和系统权限说明。
 import type { ExpoConfig } from 'expo/config';
+import { version, buildNumber } from '../package.json';
 
 const config: ExpoConfig = {
   name: '拼小兔',
   slug: 'pindo',
   scheme: 'pindo',
-  version: '1.0.0',
+  version,
   orientation: 'default',
   userInterfaceStyle: 'light',
   icon: './assets/pin-xiao-tu-icon.png',
-  ios: { bundleIdentifier: 'com.jerry.pindou', supportsTablet: true },
-  android: { package: 'com.jerry.pindou' },
+  ios: { bundleIdentifier: 'com.jerry.pindou', supportsTablet: true, buildNumber: String(buildNumber) },
+  android: { package: 'com.jerry.pindou', versionCode: buildNumber },
   plugins: [
     './plugins/with-build-memory.cjs',
     './plugins/with-release-signing.cjs',
+    './plugins/with-android-packaging.cjs',
     'expo-router', 'expo-font', 'expo-splash-screen',
     ['expo-navigation-bar', { enforceContrast: false, style: 'dark' }],
     ['expo-image-picker', { photosPermission: '选择照片以生成拼豆图纸。', cameraPermission: false, microphonePermission: false }],

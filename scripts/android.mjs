@@ -1,5 +1,6 @@
 // 本文件统一处理手机安装、release 打包和 debug 打包三个安卓入口。
-import { existsSync, readFileSync, writeFileSync } from 'node:fs';
+import { copyFileSync, existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
+import { createHash } from 'node:crypto';
 import { spawnSync } from 'node:child_process';
 import { dirname, resolve, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -12,6 +13,10 @@ if (process.argv.includes('--help') || !['install', 'release', 'debug'].includes
 }
 
 const environment = { ...process.env };
+const appPackage = JSON.parse(readFileSync(resolve(mobileDirectory, '../package.json'), 'utf8'));
+if (!/^\d+\.\d+\.\d+$/.test(appPackage.version) || !Number.isSafeInteger(appPackage.buildNumber) || appPackage.buildNumber < 1) {
+  throw new Error('根目录 package.json 必须设置三段 version 和正整数 buildNumber。');
+}
 const fixedGradleVersion = '9.8.2';
 const fixedGradleHome = String.raw`D:\devApp\Gradle\gradle-9.8.2`;
 const fixedGradleArchive = String.raw`D:\devApp\Gradle\gradle-9.8.2-all.zip`;
@@ -98,10 +103,49 @@ if (mode === 'install') {
   environment.ANDROID_SERIAL = serial;
   console.log(`只构建并安装到手机 ${serial}，CPU 架构：${architecture}，单任务编译。`);
   run(process.platform === 'win32' ? '.\\gradlew.bat' : './gradlew',
-    ['installRelease', `-PreactNativeArchitectures=${architecture}`, '-Pkotlin.compiler.execution.strategy=in-process', '--max-workers=1', '--console=plain'], resolve(mobileDirectory, 'android'));
+    [':app:installRelease', `-PreactNativeArchitectures=${architecture}`, '-Pkotlin.compiler.execution.strategy=in-process', '--max-workers=1', '--console=plain'], resolve(mobileDirectory, 'android'));
   run(adb, ['-s', serial, 'shell', 'am', 'start', '-n', 'com.jerry.pindou/.MainActivity']);
 } else {
+  const architectures = process.argv.includes('--all-abis') ? 'armeabi-v7a,arm64-v8a,x86,x86_64' : (environment.ANDROID_ARCHES || 'arm64-v8a');
+  if (!architectures.split(',').every(abi => ['armeabi-v7a', 'arm64-v8a', 'x86', 'x86_64'].includes(abi))) {
+    throw new Error(`无效的 CPU 架构：${architectures}`);
+  }
+  console.log(`构建 ${mode}，CPU 架构：${architectures}；保留原生增量缓存。`);
   run(process.platform === 'win32' ? '.\\gradlew.bat' : './gradlew',
-    [mode === 'release' ? 'assembleRelease' : 'assembleDebug', '--console=plain', '--max-workers=2'], resolve(mobileDirectory, 'android'));
+    [mode === 'release' ? ':app:assembleRelease' : ':app:assembleDebug', `-PreactNativeArchitectures=${architectures}`, '--console=plain', '--max-workers=2'], resolve(mobileDirectory, 'android'));
   console.log(`安装包已生成：${resolve(mobileDirectory, `android/app/build/outputs/apk/${mode}/app-${mode}.apk`)}`);
+  {
+    const apkDirectory = resolve(mobileDirectory, `android/app/build/outputs/apk/${mode}`);
+    const metadata = JSON.parse(readFileSync(join(apkDirectory, 'output-metadata.json'), 'utf8'));
+    const { version: expectedVersion, buildNumber } = JSON.parse(readFileSync(resolve(mobileDirectory, '../package.json'), 'utf8'));
+    const output = metadata.elements[0];
+    const expectedId = mode === 'debug' ? 'com.jerry.pindou.debug' : 'com.jerry.pindou';
+    if (metadata.applicationId !== expectedId || output.versionName !== expectedVersion || output.versionCode !== buildNumber) {
+      throw new Error('安装包的包名或版本与工程不一致，停止导出。');
+    }
+    const apk = join(apkDirectory, output.outputFile);
+    const sdk = environment.ANDROID_HOME || environment.ANDROID_SDK_ROOT;
+    if (!sdk) throw new Error('无法定位 Android SDK，不能校验安装包。');
+    const buildTools = readdirSync(join(sdk, 'build-tools')).sort((a, b) => b.localeCompare(a, undefined, { numeric: true }))
+      .map(version => join(sdk, 'build-tools', version)).find(directory => existsSync(join(directory, process.platform === 'win32' ? 'aapt.exe' : 'aapt')));
+    if (!buildTools) throw new Error('找不到 aapt，不能校验安装包。');
+    const aapt = join(buildTools, process.platform === 'win32' ? 'aapt.exe' : 'aapt');
+    const badging = spawnSync(aapt, ['dump', 'badging', apk], { encoding: 'utf8' });
+    if (badging.status !== 0 || !badging.stdout.includes(`name='${expectedId}'`) ||
+        !badging.stdout.includes(`versionName='${expectedVersion}'`) || !badging.stdout.includes(`versionCode='${buildNumber}'`)) {
+      throw new Error('APK 内部版本校验失败，停止导出。');
+    }
+    const contents = spawnSync(aapt, ['list', apk], { encoding: 'utf8' });
+    if (contents.status !== 0 || !contents.stdout.split(/\r?\n/).includes('assets/index.android.bundle')) {
+      throw new Error('APK 缺少内置 JS 页面代码，停止导出。');
+    }
+    run(join(buildTools, process.platform === 'win32' ? 'apksigner.bat' : 'apksigner'), ['verify', apk]);
+    const hash = createHash('sha256').update(readFileSync(apk)).digest('hex');
+    const releaseDirectory = resolve(mobileDirectory, '../releases');
+    mkdirSync(releaseDirectory, { recursive: true });
+    const destination = join(releaseDirectory, `pinxiaotu-${mode}-v${output.versionName}+${output.versionCode}-${hash.slice(0, 8)}.apk`);
+    copyFileSync(apk, destination);
+    writeFileSync(`${destination}.sha256`, `${hash}  ${destination.split(/[\\/]/).pop()}\n`);
+    console.log(`请传输并安装这个带版本的文件：${destination}\nSHA-256：${hash}`);
+  }
 }

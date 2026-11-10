@@ -1,6 +1,7 @@
 {
   "name": "pindo",
-  "version": "0.1.0",
+  "version": "1.0.2",
+  "buildNumber": 3,
   "private": true,
   "license": "GPL-3.0-only",
   "scripts": {

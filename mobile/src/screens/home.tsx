@@ -2,6 +2,7 @@
 import { useState } from 'react';
 import { ActivityIndicator, Alert, Pressable, Text, View } from 'react-native';
 import * as ImagePicker from 'expo-image-picker';
+import Constants from 'expo-constants';
 import { router } from 'expo-router';
 import { Page, ui } from '../components/page';
 import { Action } from '../components/controls';
@@ -20,7 +21,7 @@ export function Home() {
     finally { setBusy(false); }
   }
   return <Page title="拼小兔">
-    <View style={{ gap: 9, paddingVertical: 15 }}><Text style={ui.title}>把喜欢，拼成作品。</Text><Text style={ui.note}>PINDO · 你的随身拼豆创作室</Text></View>
+    <View style={{ gap: 9, paddingVertical: 15 }}><Text style={ui.title}>把喜欢，拼成作品。</Text><Text style={ui.note}>你的随身拼豆创作室 · v{Constants.expoConfig?.version}</Text></View>
     <Pressable accessibilityRole="button" disabled={busy} onPress={() => void choose()} style={{ backgroundColor: '#f9cee2', borderRadius: 26, padding: 26, gap: 16, minHeight: 170 }}>
       <Text style={{ fontSize: 34 }}>▦</Text><Text style={{ ...ui.title, fontSize: 23 }}>图片转拼豆图纸 →</Text><Text style={ui.note}>选一张喜欢的图片，调出专属配色。</Text>{busy && <ActivityIndicator color="#df4b89" />}
     </Pressable>

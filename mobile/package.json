@@ -2,7 +2,6 @@
   "name": "pindo-native",
   "description": "Pindo 拼豆图纸工具的 React Native 原生手机工程",
   "license": "GPL-3.0-only",
-  "version": "1.0.0",
   "main": "index.ts",
   "dependencies": {
     "@expo/metro-runtime": "~58.0.17",
