@@ -8,20 +8,24 @@ import type { BeadPattern, CompiledBeadColor } from '@/lib/types/bead';
 import { chartPng } from './drawing';
 import { getPalette, BRANDS } from './pattern';
 import { calculateUsage } from '@/lib/utils/usage-calculator';
+import { imageFilename } from './export-filename';
 
 // 将带网格图例的 PNG 写入缓存目录。
-function imageFile(pattern: BeadPattern, palette: CompiledBeadColor[]) {
-  const file = new File(Paths.cache, `pindo-${Date.now()}.png`);
-  file.write(chartPng(pattern, palette), { encoding: 'base64' });
+function imageFile(pattern: BeadPattern, palette: CompiledBeadColor[], display: { grid?: boolean; codes?: boolean } = {}) {
+  const file = new File(Paths.cache, imageFilename());
+  file.write(chartPng(pattern, palette, display), { encoding: 'base64' });
   return file;
 }
 
 // 请求仅保存照片所需的权限后保存 PNG，拒绝授权时保留明确错误。
-export async function saveImage(pattern: BeadPattern, palette: CompiledBeadColor[]) {
+export async function saveImage(pattern: BeadPattern, palette: CompiledBeadColor[], display: { grid?: boolean; codes?: boolean } = {}) {
   const permission = await MediaLibrary.requestPermissionsAsync(true);
   if (!permission.granted) throw new Error('需要允许保存图片到相册，也可以使用“分享 PNG”。');
-  const file = imageFile(pattern, palette);
-  await MediaLibrary.Asset.create(file.uri);
+  const file = imageFile(pattern, palette, display);
+  const filename = file.name;
+  try { await MediaLibrary.Asset.create(file.uri); }
+  finally { if (file.exists) file.delete(); }
+  return filename;
 }
 
 // 调用系统分享面板发送真实导出文件。

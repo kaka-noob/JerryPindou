@@ -31,24 +31,34 @@ export function downscale(
   mode: PixelationMode = 'average',
   edgeOptions?: EdgeAwareOptions
 ): DownscaledPixel[] {
-  if (mode === 'dominant') return downscaleDominant(data, srcW, srcH, dstW, dstH);
-  if (mode === 'edge-aware') return downscaleEdgeAware(data, srcW, srcH, dstW, dstH, edgeOptions);
-  return downscaleAverage(data, srcW, srcH, dstW, dstH);
+  const steps = downscaleSteps(data, srcW, srcH, dstW, dstH, mode, edgeOptions);
+  let step = steps.next();
+  while (!step.done) step = steps.next();
+  return step.value;
 }
 
-function downscaleAverage(
+// 允许原生实时预览在每个目标格子之间让出执行权，同步网页接口保持原行为。
+export function* downscaleSteps(data: Uint8ClampedArray, srcW: number, srcH: number, dstW: number, dstH: number,
+  mode: PixelationMode = 'average', edgeOptions?: EdgeAwareOptions): Generator<void, DownscaledPixel[], unknown> {
+  if (mode === 'dominant') return yield* downscaleDominant(data, srcW, srcH, dstW, dstH);
+  if (mode === 'edge-aware') return yield* downscaleEdgeAware(data, srcW, srcH, dstW, dstH, edgeOptions);
+  return yield* downscaleAverage(data, srcW, srcH, dstW, dstH);
+}
+
+function* downscaleAverage(
   data: Uint8ClampedArray,
   srcW: number,
   srcH: number,
   dstW: number,
   dstH: number
-): DownscaledPixel[] {
+): Generator<void, DownscaledPixel[], unknown> {
   const result: DownscaledPixel[] = new Array(dstW * dstH);
   const scaleX = srcW / dstW;
   const scaleY = srcH / dstH;
 
   for (let dy = 0; dy < dstH; dy++) {
     for (let dx = 0; dx < dstW; dx++) {
+      yield;
       const sx0 = Math.floor(dx * scaleX);
       const sy0 = Math.floor(dy * scaleY);
       const sx1 = Math.min(Math.ceil((dx + 1) * scaleX), srcW);
@@ -56,6 +66,7 @@ function downscaleAverage(
 
       let linR = 0, linG = 0, linB = 0, count = 0;
       for (let sy = sy0; sy < sy1; sy++) {
+        if ((sy - sy0) % 8 === 0) yield;
         for (let sx = sx0; sx < sx1; sx++) {
           const i = (sy * srcW + sx) * 4;
           linR += srgbToLinear(data[i]);
@@ -75,19 +86,20 @@ function downscaleAverage(
   return result;
 }
 
-function downscaleDominant(
+function* downscaleDominant(
   data: Uint8ClampedArray,
   srcW: number,
   srcH: number,
   dstW: number,
   dstH: number
-): DownscaledPixel[] {
+): Generator<void, DownscaledPixel[], unknown> {
   const result: DownscaledPixel[] = new Array(dstW * dstH);
   const scaleX = srcW / dstW;
   const scaleY = srcH / dstH;
 
   for (let dy = 0; dy < dstH; dy++) {
     for (let dx = 0; dx < dstW; dx++) {
+      yield;
       const sx0 = Math.floor(dx * scaleX);
       const sy0 = Math.floor(dy * scaleY);
       const sx1 = Math.min(Math.ceil((dx + 1) * scaleX), srcW);
@@ -97,6 +109,7 @@ function downscaleDominant(
       const freq = new Map<number, { count: number; sumR: number; sumG: number; sumB: number }>();
       let bestKey = 0, bestCount = 0;
       for (let sy = sy0; sy < sy1; sy++) {
+        if ((sy - sy0) % 8 === 0) yield;
         for (let sx = sx0; sx < sx1; sx++) {
           const i = (sy * srcW + sx) * 4;
           const r = data[i], g = data[i + 1], b = data[i + 2];
@@ -122,14 +135,14 @@ function downscaleDominant(
   return result;
 }
 
-function downscaleEdgeAware(
+function* downscaleEdgeAware(
   data: Uint8ClampedArray,
   srcW: number,
   srcH: number,
   dstW: number,
   dstH: number,
   options?: EdgeAwareOptions
-): DownscaledPixel[] {
+): Generator<void, DownscaledPixel[], unknown> {
   const result: DownscaledPixel[] = new Array(dstW * dstH);
   const scaleX = srcW / dstW;
   const scaleY = srcH / dstH;
@@ -146,6 +159,7 @@ function downscaleEdgeAware(
 
   for (let dy = 0; dy < dstH; dy++) {
     for (let dx = 0; dx < dstW; dx++) {
+      yield;
       const sx0 = Math.floor(dx * scaleX);
       const sy0 = Math.floor(dy * scaleY);
       const sx1 = Math.min(Math.ceil((dx + 1) * scaleX), srcW);
@@ -176,6 +190,7 @@ function downscaleEdgeAware(
       let sampleCount = 0;
 
       for (let sy = sy0; sy < sy1; sy++) {
+        if ((sy - sy0) % 8 === 0) yield;
         for (let sx = sx0; sx < sx1; sx++) {
           const i = (sy * srcW + sx) * 4;
           const r = data[i], g = data[i + 1], b = data[i + 2];

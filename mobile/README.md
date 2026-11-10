@@ -1,5 +1,5 @@
 <!-- 本文件说明 Pindo React Native 手机工程的运行、打包与功能范围。 -->
-# Pindo React Native
+# 杰瑞拼豆 React Native
 
 这是 Expo 管理的 React Native 应用，界面使用原生组件，图纸使用 Skia 绘制，不使用 WebView，也不依赖 Capacitor。
 根目录保留原网页作为迁移参照，`lib` 中的类型、色板、颜色匹配、缩放和网格识别由两端共用。
@@ -23,11 +23,12 @@ npm run debug
 ## 安卓安装包
 
 电脑需要安装 Node.js、Android Studio、Android SDK 和兼容的 JDK。可用 `ANDROID_HOME` 或 `ANDROID_SDK_ROOT` 指定 SDK；Windows 也会自动查找默认 SDK 安装目录。
+Windows 固定使用 `D:\devApp\Gradle\gradle-9.8.2`，缺失时直接报错，不自动切换 Gradle 版本。配置随每次原生工程生成自动恢复。Gradle 缓存位于 `D:\devApp\Gradle\user-home`，CMake 缓存位于 `D:\pindo-cxx`。
 
 APK 位于 `mobile/android/app/build/outputs/apk/release/app-release.apk`。
 debug 包位于 `mobile/android/app/build/outputs/apk/debug/app-debug.apk`。
-本次本机构建在下载官方 `react-android-0.88.1-release.aar` 时超时，尚未生成独立 APK；JavaScript 资源导出与 Expo Go 运行已经验证。
-Expo 模板的本地 release 默认使用调试签名，适合本机验证；正式发布需要配置自己的签名。
+应用名称“杰瑞拼豆”，包名 `com.jerry.pindou`。本地 release 使用项目 `signing` 目录中的独立签名密钥；首次构建自动生成，后续复用。请同时备份 `pindo-release.jks` 和 `release.properties`，不要提交到仓库。
+2026-11-10 已成功生成 1.0.0 arm64 release APK，大小 46.3 MiB，签名、包名和名称校验通过，图标已更新。本轮界面改版尚未做设备运行验证。
 原生工程由 Expo 配置生成，修改应用配置后需要重新生成并构建。iOS 本地构建需要 macOS 和 Xcode。
 
 ## 已迁移功能

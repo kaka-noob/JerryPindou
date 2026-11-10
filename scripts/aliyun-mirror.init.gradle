@@ -24,6 +24,17 @@ settingsEvaluated { settings ->
 allprojects { project ->
     useMirrors(project.buildscript.repositories)
     useMirrors(project.repositories)
+    if (['gradle-plugin', 'expo-gradle-plugin', 'expo-module-gradle-plugin'].contains(project.rootDir.name)) {
+        project.buildscript.configurations.configureEach { configuration ->
+            // 仅构建 Gradle 插件时需读取 Gradle 9.8 的 Kotlin 2.4 元数据。
+            // 应用模块保留 Expo 配套编译器，匹配 Pika / Modules V2 编译插件。
+            configuration.resolutionStrategy.eachDependency { dependency ->
+                if (dependency.requested.group == 'org.jetbrains.kotlin') {
+                    dependency.useVersion('2.4.21')
+                }
+            }
+        }
+    }
     // Windows 深层 node_modules 路径会超过 Ninja 限制，提前触发对象路径哈希。
     if (System.getProperty('os.name').toLowerCase().contains('windows')) {
         ['com.android.library', 'com.android.application'].each { pluginId ->
@@ -33,7 +44,8 @@ allprojects { project ->
                 // 同时缩短中间目录；只限制长度不足以处理较深的对象文件根目录。
                 def workspaceId = Integer.toHexString(project.rootDir.absolutePath.hashCode())
                 def driveRoot = project.rootDir.toPath().root.toFile()
-                android.externalNativeBuild.cmake.buildStagingDirectory = new File(driveRoot, "pindo-cxx/${workspaceId}/${Integer.toHexString(project.path.hashCode())}")
+                def stagingRoot = System.getenv('PINDO_CXX_ROOT') ?: new File(driveRoot, 'pindo-cxx').absolutePath
+                android.externalNativeBuild.cmake.buildStagingDirectory = new File(stagingRoot, "${workspaceId}/${Integer.toHexString(project.path.hashCode())}")
             }
         }
     }

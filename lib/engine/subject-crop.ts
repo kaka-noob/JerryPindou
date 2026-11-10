@@ -29,6 +29,15 @@ export function cropToSubject(
   height: number,
   options: SubjectCropOptions
 ): SubjectCropResult {
+  const steps = cropToSubjectSteps(data, width, height, options);
+  let step = steps.next();
+  while (!step.done) step = steps.next();
+  return step.value;
+}
+
+// 原生实时预览可逐行扫描，避免处理照片时长时间占用交互线程。
+export function* cropToSubjectSteps(data: Uint8ClampedArray, width: number, height: number,
+  options: SubjectCropOptions): Generator<void, SubjectCropResult, unknown> {
   if (width <= 0 || height <= 0 || data.length !== width * height * 4) {
     return { data, width, height, offsetX: 0, offsetY: 0, cropped: false };
   }
@@ -52,6 +61,7 @@ export function cropToSubject(
 
   let foregroundCount = 0;
   for (let y = 0; y < height; y++) {
+    yield;
     for (let x = 0; x < width; x++) {
       const i = (y * width + x) * 4;
       const a = data[i + 3];
@@ -72,8 +82,10 @@ export function cropToSubject(
   const visited = new Uint8Array(sampleW * sampleH);
   const components: Array<{ weight: number; minX: number; minY: number; maxX: number; maxY: number }> = [];
   let bestWeight = 0;
+  let scanned = 0;
 
   for (let start = 0; start < sampleCounts.length; start++) {
+    if (start % 256 === 0) yield;
     if (visited[start]) continue;
     if (sampleCounts[start] === 0) continue;
 
@@ -86,6 +98,7 @@ export function cropToSubject(
     visited[start] = 1;
 
     while (stack.length > 0) {
+      if (++scanned % 256 === 0) yield;
       const idx = stack.pop()!;
       const cellWeight = sampleCounts[idx];
       if (cellWeight === 0) continue;
@@ -171,6 +184,7 @@ export function cropToSubject(
 
   const cropped = new Uint8ClampedArray(cropW * cropH * 4);
   for (let y = 0; y < cropH; y++) {
+    yield;
     const srcStart = ((cropMinY + y) * width + cropMinX) * 4;
     const srcEnd = srcStart + cropW * 4;
     const dstStart = y * cropW * 4;

@@ -1,5 +1,5 @@
 // 本文件统一处理手机安装、release 打包和 debug 打包三个安卓入口。
-import { existsSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
+import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
 import { dirname, resolve, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -12,6 +12,19 @@ if (process.argv.includes('--help') || !['install', 'release', 'debug'].includes
 }
 
 const environment = { ...process.env };
+const fixedGradleVersion = '9.8.2';
+const fixedGradleHome = String.raw`D:\devApp\Gradle\gradle-9.8.2`;
+const fixedGradleArchive = String.raw`D:\devApp\Gradle\gradle-9.8.2-all.zip`;
+if (process.platform === 'win32') {
+  if (!existsSync(join(fixedGradleHome, 'bin/gradle.bat')) || !existsSync(join(fixedGradleHome, `lib/gradle-launcher-${fixedGradleVersion}.jar`))) {
+    console.error(`找不到固定的 Gradle ${fixedGradleVersion}，请将安装包解压到 ${fixedGradleHome}。`);
+    process.exit(1);
+  }
+  // 仅影响本次构建进程，不修改系统环境变量，也不接受其他版本覆盖。
+  environment.GRADLE_HOME = fixedGradleHome;
+  environment.GRADLE_USER_HOME ||= resolve(fixedGradleHome, '../user-home');
+  environment.PINDO_CXX_ROOT ||= String.raw`D:\pindo-cxx`;
+}
 if (!environment.ANDROID_HOME && !environment.ANDROID_SDK_ROOT && process.platform === 'win32' && environment.LOCALAPPDATA) {
   const sdkDirectory = resolve(environment.LOCALAPPDATA, 'Android/Sdk');
   if (existsSync(sdkDirectory)) environment.ANDROID_HOME = sdkDirectory;
@@ -33,33 +46,32 @@ if (!existsSync(resolve(mobileDirectory, 'node_modules/expo/package.json'))) {
 }
 
 const expoCli = resolve(mobileDirectory, 'node_modules/expo/bin/cli');
-// 每次构建前同步应用配置与原生插件，省去手动 prebuild 步骤。
-run(process.execPath, [expoCli, 'prebuild', '--platform', 'android', '--no-install']);
+if (mode !== 'debug') run(process.execPath, [resolve(mobileDirectory, '../scripts/create-release-keystore.mjs')]);
+// SDK 58 默认清空原生目录；显式保留目录才能复用 Gradle 编译结果。
+run(process.execPath, [expoCli, 'prebuild', '--platform', 'android', '--no-install', '--no-clean']);
 
-// 使用当前工程要求的本地 Gradle，并在重新生成工程后恢复镜像入口。
+// 每次 Expo 重新生成工程后，恢复固定 Gradle 入口与依赖镜像。
 function configureGradle() {
   const androidDirectory = resolve(mobileDirectory, 'android');
-  const properties = readFileSync(resolve(androidDirectory, 'gradle/wrapper/gradle-wrapper.properties'), 'utf8');
-  const version = properties.match(/gradle-([\d.]+)-(?:bin|all)\.zip/)?.[1];
-  const gradleUserHome = environment.GRADLE_USER_HOME || resolve(environment.USERPROFILE || environment.HOME, '.gradle');
-  const candidates = [environment.PINDO_GRADLE_HOME, environment.GRADLE_HOME].filter(Boolean);
-  for (const kind of ['bin', 'all']) {
-    const cache = resolve(gradleUserHome, `wrapper/dists/gradle-${version}-${kind}`);
-    if (existsSync(cache)) {
-      for (const directory of readdirSync(cache)) candidates.push(join(cache, directory, `gradle-${version}`));
-    }
-  }
-  const localHome = candidates.find(directory => existsSync(join(directory, `lib/gradle-launcher-${version}.jar`)));
   const mirror = resolve(mobileDirectory, '../scripts/aliyun-mirror.init.gradle');
   const wrapper = resolve(androidDirectory, 'gradlew.bat');
   let content = readFileSync(wrapper, 'utf8');
-  if (process.platform === 'win32' && localHome) {
-    // 保留生成的启动器原文，在开头委托给版本匹配的本地 Gradle。
-    content = content.replace(/@echo off/i, `@echo off\r\n@rem 使用本地 Gradle 和国内依赖镜像。\r\n@call "${join(localHome, 'bin/gradle.bat')}" --init-script "${mirror}" %*\r\n@exit /b %errorlevel%`);
-    console.log(`使用本地 Gradle ${version}：${localHome}`);
+  if (process.platform === 'win32') {
+    // Expo 会重建启动器；清除旧转发块，使重复配置也只保留一个固定入口。
+    content = content.replace(/\r?\n@rem 使用本地 Gradle 和国内依赖镜像。\r?\n@call [^\r\n]+\r?\n@exit \/b %errorlevel%/g, '');
+    content = content.replace(/@echo off/i, `@echo off\r\n@rem 使用本地 Gradle 和国内依赖镜像。\r\n@call "${join(fixedGradleHome, 'bin/gradle.bat')}" --init-script "${mirror}" %*\r\n@exit /b %errorlevel%`);
+    // 元数据也固定到 9.8.2；其他 Wrapper 入口优先读取现有本地压缩包。
+    const propertiesPath = resolve(androidDirectory, 'gradle/wrapper/gradle-wrapper.properties');
+    const distribution = existsSync(fixedGradleArchive) ? `file:///D:/devApp/Gradle/gradle-${fixedGradleVersion}-all.zip`
+      : `https://services.gradle.org/distributions/gradle-${fixedGradleVersion}-all.zip`;
+    const properties = readFileSync(propertiesPath, 'utf8')
+      .replace(/^distributionUrl=.*$/m, `distributionUrl=${distribution}`)
+      .replace(/^distributionSha256Sum=.*\r?\n?/m, '');
+    writeFileSync(propertiesPath, properties, 'utf8');
+    console.log(`固定使用 Gradle ${fixedGradleVersion}：${fixedGradleHome}`);
   } else {
     content = content.replace(/(gradle-wrapper\.jar"[^\r\n]*?) %\*/, `$1 --init-script "${mirror}" %*`);
-    console.log(`使用 Gradle Wrapper ${version} 和阿里云依赖镜像。`);
+    console.log('使用工程 Gradle Wrapper 和阿里云依赖镜像。');
   }
   writeFileSync(wrapper, content, 'utf8');
   // 官方脚本仍负责手机选择与安装；通过进程参数限制并行并延长下载等待。
@@ -87,7 +99,7 @@ if (mode === 'install') {
   console.log(`只构建并安装到手机 ${serial}，CPU 架构：${architecture}，单任务编译。`);
   run(process.platform === 'win32' ? '.\\gradlew.bat' : './gradlew',
     ['installRelease', `-PreactNativeArchitectures=${architecture}`, '-Pkotlin.compiler.execution.strategy=in-process', '--max-workers=1', '--console=plain'], resolve(mobileDirectory, 'android'));
-  run(adb, ['-s', serial, 'shell', 'am', 'start', '-n', 'com.pindo.app/.MainActivity']);
+  run(adb, ['-s', serial, 'shell', 'am', 'start', '-n', 'com.jerry.pindou/.MainActivity']);
 } else {
   run(process.platform === 'win32' ? '.\\gradlew.bat' : './gradlew',
     [mode === 'release' ? 'assembleRelease' : 'assembleDebug', '--console=plain', '--max-workers=2'], resolve(mobileDirectory, 'android'));

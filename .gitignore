@@ -49,5 +49,8 @@ nul
 .claude/
 # Android signing keystore (sensitive — never commit)
 *.jks
+*.keystore
+/signing/*
+!/signing/README.md
 # local launcher shortcuts (absolute paths, user-specific)
 *.lnk
