@@ -7,7 +7,7 @@ module.exports = function withReleaseSigning(config) {
     if (!config.modResults.contents.includes('// PINDO_RELEASE_SIGNING')) {
       config.modResults.contents += `
 // PINDO_RELEASE_SIGNING
-def pindoSigningFile = rootProject.file('../../signing/release.properties')
+def pindoSigningFile = rootProject.file('../signing/release.properties')
 if (pindoSigningFile.exists()) {
     def pindoSigning = new java.util.Properties()
     pindoSigningFile.withInputStream { pindoSigning.load(it) }

@@ -1,112 +1,56 @@
-<!-- 本文件说明项目概况，并提供原生手机工程和原网页的入口。 -->
-**English** | [简体中文](README.zh-CN.md)
+<!-- 本文件说明 Pindo React Native 手机工程的运行、打包与功能范围。 -->
+# 杰瑞拼豆 React Native
 
-# Pindo — Fuse Bead Pattern Generator
+这是 Expo 管理的 React Native 应用，界面使用原生组件，图纸使用 Skia 绘制，不使用 WebView，也不依赖 Capacitor。
+`lib` 中的类型、色板、颜色匹配、缩放和网格识别供原生工程使用。
 
-The React Native app lives in [`mobile/`](mobile/README.md). Run `npm run android` from the repository root to build and install the standalone app on your phone. The only npm scripts are `android`, `release`, and `debug`; dependencies and native project generation are handled automatically.
-
-Pindo is a local-first tool for turning photos, illustrations, and pixel art into numbered fuse-bead patterns. It can also recognize existing unlabeled bead charts and add grid, color-code, and usage information.
-
-All image processing runs in the browser. Pindo does not upload source images to an application server.
-
-[Try Pindo online](https://pindo-eight.vercel.app)
-
-## Features
-
-- **Image to pattern** — Convert photos, illustrations, or pixel art into bead charts.
-- **Pattern recognition** — Recognize unlabeled charts with or without a visible grid.
-- **Color-code highlighting** — Inspect and highlight individual bead colors in a chart.
-- **Eight brand palettes** — MARD, Hama, Perler, Artkal S, COCO, Manman, Panpan, and Mixiaowo.
-- **Flexible rendering** — Choose a creative mode, dithering strategy, palette limit, and image adjustments.
-- **Palette filters** — Include or exclude color series and individual color codes.
-- **Bead-based sizing** — Set width and height in beads and optionally lock the aspect ratio.
-- **Usage statistics** — View the required color codes and bead quantities.
-- **PNG export** — Save a chart with its grid, color codes, and usage legend.
-- **Bilingual UI** — Simplified Chinese and English.
-- **Local and portable** — Static web build, PWA assets, Windows launcher, and a Capacitor Android path.
-
-## Privacy model
-
-Uploaded images are decoded and processed with browser Canvas APIs and typed arrays. The application has no image-upload API or application backend. When self-hosting, the selected static host still serves the application assets as usual.
-
-## Quick start
-
-### Windows launcher
-
-Clone or download the repository, then double-click `启动 Pindo.cmd`. On the first launch, the script installs locked dependencies, builds the static application, and opens the local server.
-
-### Development server
+## 三个命令
 
 ```powershell
-npm ci
-npx next dev
-```
-
-Open <http://localhost:3000>.
-
-### Production-like local build
-
-```powershell
-npm ci
-npx next build
-node server.mjs --open
-```
-
-The static export is generated in `out/` and served only on `127.0.0.1` by default.
-
-## Development commands
-
-| Command | Purpose |
-| --- | --- |
-| `npm run android` | Build, install and launch the standalone release app on a phone |
-| `npm run release` | Build a release APK |
-| `npm run debug` | Build a debug APK |
-
-## Android packaging
-
-The current React Native Android application ID is `com.pindo.app`. Build from the repository root:
-
-```powershell
+npm run android
 npm run release
+npm run debug
 ```
 
-See [ANDROID.md](ANDROID.md) for details. Android signing keys such as `pindo-release.jks` are sensitive and must not be committed.
+以上命令均在项目根目录执行。首次运行自动安装手机工程依赖，每次运行自动同步原生工程。
 
-## Technology
+- `android`：构建 release 应用，选择连接的手机，安装并启动；不需要 Expo Go 或开发服务器。
+- `release`：只生成 release APK，不安装到手机。
+- `debug`：只生成标准 RN debug APK；调试时需要在根目录运行 `npx expo start` 提供开发服务器。
 
-- Next.js 16 static export, React 19, and TypeScript
-- Tailwind CSS 4 and shadcn/ui
-- Browser Canvas and typed arrays for image processing
-- Vitest for algorithm tests
-- Capacitor 8 for the Android packaging path
-- jsPDF and Canvas-based export modules
+直接安装前，手机需要打开 USB 调试，并允许这台电脑调试。连接多台设备时按提示选择手机。
 
-## Project structure
+## 安卓安装包
 
-```text
-├── app/                  # Main workspace and focus-mode pages
-├── components/           # Upload, parameters, preview, usage, and export UI
-├── lib/
-│   ├── engine/           # Scaling, matching, cleanup, and chart recognition
-│   ├── export/           # PNG and PDF export modules
-│   ├── data/palettes/    # Compiled brand palette data
-│   ├── i18n/             # Chinese and English UI strings
-│   └── native/           # Native bridge definitions
-├── public/               # PWA manifest, service worker, icons, and static assets
-├── scripts/              # Palette and icon generation scripts
-└── server.mjs            # Dependency-free local static server
+电脑需要安装 Node.js、Android Studio、Android SDK 和兼容的 JDK。可用 `ANDROID_HOME` 或 `ANDROID_SDK_ROOT` 指定 SDK；Windows 也会自动查找默认 SDK 安装目录。
+Windows 固定使用 `D:\devApp\Gradle\gradle-9.4.1`，缺失时直接报错，不自动切换 Gradle 版本。配置随每次原生工程生成自动恢复。Gradle 缓存位于 `D:\devApp\Gradle\user-home`，CMake 缓存位于 `D:\pindo-cxx`。
+
+APK 位于 `android/app/build/outputs/apk/release/app-release.apk`。
+debug 包位于 `android/app/build/outputs/apk/debug/app-debug.apk`。
+应用名称“杰瑞拼豆”，包名 `com.jerry.pindou`。本地 release 使用项目 `signing` 目录中的独立签名密钥；首次构建自动生成，后续复用。请同时备份 `pindo-release.jks` 和 `release.properties`，不要提交到仓库。
+2026-11-10 已成功生成 1.0.0 arm64 release APK，大小 46.3 MiB，签名、包名和名称校验通过，图标已更新。本轮界面改版尚未做设备运行验证。
+原生工程由 Expo 配置生成，修改应用配置后需要重新生成并构建。iOS 本地构建需要 macOS 和 Xcode。
+
+## 已迁移功能
+
+- 系统相册选图、系统图片裁剪、八套离线品牌色板、宽高颗数、比例锁定和颜色筛选。
+- 写实、主色、清晰模式，最大颜色数、抖动和透明区域留空。
+- 自动网格识别、色号高亮、用量统计、原生图纸滚动与缩放。
+- 格子改色、撤销、专注拼豆标记、前台计时和本机工程恢复。
+- PNG 保存相册、PNG/PDF/用量 CSV 系统分享、JSON 工程备份与导入。
+- 无广告、作者宣传或启动倒计时弹窗。
+
+大照片会先缩小到最长边 1600 像素，以控制手机内存。颗数上限为宽高各 200。
+PDF 当前为完整图纸图片嵌入文档，尚未迁移网页的多页拼版排版；原生界面当前为中文。
+
+## 检查
+
+```powershell
+npx tsc --noEmit
+npx eslint .
 ```
 
-## Contributing
+检查命令在项目根目录执行，不再额外配置 npm 脚本。类型和静态检查通过不能替代设备运行验证。
 
-Issues and pull requests are welcome. For behavior changes, include or update relevant tests and verify the static build. Treat changes to dependencies, launch scripts, local file serving, and native bridges as security-sensitive.
 
-## Community
-
-Community link: [LINUX DO](https://linux.do/) — Join the community to discuss IT technologies and open-source projects.
-
-## License
-
-Copyright © 2026 LunarXuan.
-
-Pindo is licensed under the [GNU General Public License v3.0 only](LICENSE).
+项目许可遵循根目录 `LICENSE`；本目录的 `LICENSE` 保留 Expo 脚手架原始许可声明。

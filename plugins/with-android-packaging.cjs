@@ -23,9 +23,9 @@ module.exports = function withAndroidPackaging(config) {
 tasks.configureEach { task ->
     if (task.name == 'createBundleDebugJsAndAssets' || task.name == 'createBundleReleaseJsAndAssets') {
         task.sources.exclude('**/.expo/**')
-        task.inputs.dir(rootProject.file('../../lib'))
+        task.inputs.dir(rootProject.file('../lib'))
         task.inputs.dir(rootProject.file('../assets'))
-        task.inputs.files(rootProject.file('../../package.json'), rootProject.file('../package.json'))
+        task.inputs.files(rootProject.file('../package.json'))
     }
 }
 `;

@@ -1,9 +1,0 @@
-// 本文件配置原生项目的类型检查及共用代码别名。
-{
-  "extends": "expo/tsconfig.base",
-  "compilerOptions": {
-    "strict": true,
-    "resolveJsonModule": true,
-    "paths": { "@/*": ["../*"], "~/*": ["./src/*"] }
-  }
-}

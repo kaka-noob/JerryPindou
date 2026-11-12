@@ -5,7 +5,7 @@ import { spawnSync } from 'node:child_process';
 import { dirname, resolve, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-const mobileDirectory = resolve(dirname(fileURLToPath(import.meta.url)), '../mobile');
+const projectDirectory = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const mode = process.argv[2];
 if (process.argv.includes('--help') || !['install', 'release', 'debug'].includes(mode)) {
   console.log('在项目根目录运行：npm run android（安装到手机）、npm run release、npm run debug。');
@@ -13,13 +13,13 @@ if (process.argv.includes('--help') || !['install', 'release', 'debug'].includes
 }
 
 const environment = { ...process.env };
-const appPackage = JSON.parse(readFileSync(resolve(mobileDirectory, '../package.json'), 'utf8'));
+const appPackage = JSON.parse(readFileSync(resolve(projectDirectory, 'package.json'), 'utf8'));
 if (!/^\d+\.\d+\.\d+$/.test(appPackage.version) || !Number.isSafeInteger(appPackage.buildNumber) || appPackage.buildNumber < 1) {
   throw new Error('根目录 package.json 必须设置三段 version 和正整数 buildNumber。');
 }
-const fixedGradleVersion = '9.8.2';
-const fixedGradleHome = String.raw`D:\devApp\Gradle\gradle-9.8.2`;
-const fixedGradleArchive = String.raw`D:\devApp\Gradle\gradle-9.8.2-all.zip`;
+const fixedGradleVersion = '9.4.1';
+const fixedGradleHome = String.raw`D:\devApp\Gradle\gradle-9.4.1`;
+const fixedGradleArchive = String.raw`D:\devApp\Gradle\gradle-9.4.1-bin.zip`;
 if (process.platform === 'win32') {
   if (!existsSync(join(fixedGradleHome, 'bin/gradle.bat')) || !existsSync(join(fixedGradleHome, `lib/gradle-launcher-${fixedGradleVersion}.jar`))) {
     console.error(`找不到固定的 Gradle ${fixedGradleVersion}，请将安装包解压到 ${fixedGradleHome}。`);
@@ -27,7 +27,7 @@ if (process.platform === 'win32') {
   }
   // 仅影响本次构建进程，不修改系统环境变量，也不接受其他版本覆盖。
   environment.GRADLE_HOME = fixedGradleHome;
-  environment.GRADLE_USER_HOME ||= resolve(fixedGradleHome, '../user-home');
+  environment.GRADLE_USER_HOME ||= String.raw`D:\devApp\Gradle\user-home`;
   environment.PINDO_CXX_ROOT ||= String.raw`D:\pindo-cxx`;
 }
 if (!environment.ANDROID_HOME && !environment.ANDROID_SDK_ROOT && process.platform === 'win32' && environment.LOCALAPPDATA) {
@@ -36,7 +36,7 @@ if (!environment.ANDROID_HOME && !environment.ANDROID_SDK_ROOT && process.platfo
 }
 
 // 执行固定的构建命令，失败时立即停止并保留原始错误输出。
-function run(command, args, cwd = mobileDirectory) {
+function run(command, args, cwd = projectDirectory) {
   const result = spawnSync(command, args, {
     cwd, env: environment, stdio: 'inherit',
     shell: process.platform === 'win32' && (command.endsWith('.bat') || command === 'npm'),
@@ -45,30 +45,29 @@ function run(command, args, cwd = mobileDirectory) {
   if (result.status !== 0) process.exit(result.status ?? 1);
 }
 
-if (!existsSync(resolve(mobileDirectory, 'node_modules/expo/package.json'))) {
+if (!existsSync(resolve(projectDirectory, 'node_modules/expo/package.json'))) {
   console.log('首次运行，正在安装手机工程依赖…');
   run('npm', ['ci']);
 }
 
-const expoCli = resolve(mobileDirectory, 'node_modules/expo/bin/cli');
-if (mode !== 'debug') run(process.execPath, [resolve(mobileDirectory, '../scripts/create-release-keystore.mjs')]);
+const expoCli = resolve(projectDirectory, 'node_modules/expo/bin/cli');
+if (mode !== 'debug') run(process.execPath, [resolve(projectDirectory, 'scripts/create-release-keystore.mjs')]);
 // SDK 58 默认清空原生目录；显式保留目录才能复用 Gradle 编译结果。
 run(process.execPath, [expoCli, 'prebuild', '--platform', 'android', '--no-install', '--no-clean']);
 
 // 每次 Expo 重新生成工程后，恢复固定 Gradle 入口与依赖镜像。
 function configureGradle() {
-  const androidDirectory = resolve(mobileDirectory, 'android');
-  const mirror = resolve(mobileDirectory, '../scripts/aliyun-mirror.init.gradle');
+  const androidDirectory = resolve(projectDirectory, 'android');
+  const mirror = resolve(projectDirectory, 'scripts/aliyun-mirror.init.gradle');
   const wrapper = resolve(androidDirectory, 'gradlew.bat');
   let content = readFileSync(wrapper, 'utf8');
   if (process.platform === 'win32') {
     // Expo 会重建启动器；清除旧转发块，使重复配置也只保留一个固定入口。
     content = content.replace(/\r?\n@rem 使用本地 Gradle 和国内依赖镜像。\r?\n@call [^\r\n]+\r?\n@exit \/b %errorlevel%/g, '');
     content = content.replace(/@echo off/i, `@echo off\r\n@rem 使用本地 Gradle 和国内依赖镜像。\r\n@call "${join(fixedGradleHome, 'bin/gradle.bat')}" --init-script "${mirror}" %*\r\n@exit /b %errorlevel%`);
-    // 元数据也固定到 9.8.2；其他 Wrapper 入口优先读取现有本地压缩包。
+    // 元数据也固定到本地 9.4.1 压缩包，禁止回退到远程分发下载。
     const propertiesPath = resolve(androidDirectory, 'gradle/wrapper/gradle-wrapper.properties');
-    const distribution = existsSync(fixedGradleArchive) ? `file:///D:/devApp/Gradle/gradle-${fixedGradleVersion}-all.zip`
-      : `https://services.gradle.org/distributions/gradle-${fixedGradleVersion}-all.zip`;
+    const distribution = `file:///${fixedGradleArchive.replaceAll('\\', '/')}`;
     const properties = readFileSync(propertiesPath, 'utf8')
       .replace(/^distributionUrl=.*$/m, `distributionUrl=${distribution}`)
       .replace(/^distributionSha256Sum=.*\r?\n?/m, '');
@@ -103,7 +102,7 @@ if (mode === 'install') {
   environment.ANDROID_SERIAL = serial;
   console.log(`只构建并安装到手机 ${serial}，CPU 架构：${architecture}，单任务编译。`);
   run(process.platform === 'win32' ? '.\\gradlew.bat' : './gradlew',
-    [':app:installRelease', `-PreactNativeArchitectures=${architecture}`, '-Pkotlin.compiler.execution.strategy=in-process', '--max-workers=1', '--console=plain'], resolve(mobileDirectory, 'android'));
+    [':app:installRelease', `-PreactNativeArchitectures=${architecture}`, '-Pkotlin.compiler.execution.strategy=in-process', '--max-workers=1', '--console=plain'], resolve(projectDirectory, 'android'));
   run(adb, ['-s', serial, 'shell', 'am', 'start', '-n', 'com.jerry.pindou/.MainActivity']);
 } else {
   const architectures = process.argv.includes('--all-abis') ? 'armeabi-v7a,arm64-v8a,x86,x86_64' : (environment.ANDROID_ARCHES || 'arm64-v8a');
@@ -112,12 +111,12 @@ if (mode === 'install') {
   }
   console.log(`构建 ${mode}，CPU 架构：${architectures}；保留原生增量缓存。`);
   run(process.platform === 'win32' ? '.\\gradlew.bat' : './gradlew',
-    [mode === 'release' ? ':app:assembleRelease' : ':app:assembleDebug', `-PreactNativeArchitectures=${architectures}`, '--console=plain', '--max-workers=2'], resolve(mobileDirectory, 'android'));
-  console.log(`安装包已生成：${resolve(mobileDirectory, `android/app/build/outputs/apk/${mode}/app-${mode}.apk`)}`);
+    [mode === 'release' ? ':app:assembleRelease' : ':app:assembleDebug', `-PreactNativeArchitectures=${architectures}`, '--console=plain', '--max-workers=2'], resolve(projectDirectory, 'android'));
+  console.log(`安装包已生成：${resolve(projectDirectory, `android/app/build/outputs/apk/${mode}/app-${mode}.apk`)}`);
   {
-    const apkDirectory = resolve(mobileDirectory, `android/app/build/outputs/apk/${mode}`);
+    const apkDirectory = resolve(projectDirectory, `android/app/build/outputs/apk/${mode}`);
     const metadata = JSON.parse(readFileSync(join(apkDirectory, 'output-metadata.json'), 'utf8'));
-    const { version: expectedVersion, buildNumber } = JSON.parse(readFileSync(resolve(mobileDirectory, '../package.json'), 'utf8'));
+    const { version: expectedVersion, buildNumber } = JSON.parse(readFileSync(resolve(projectDirectory, 'package.json'), 'utf8'));
     const output = metadata.elements[0];
     const expectedId = mode === 'debug' ? 'com.jerry.pindou.debug' : 'com.jerry.pindou';
     if (metadata.applicationId !== expectedId || output.versionName !== expectedVersion || output.versionCode !== buildNumber) {
@@ -141,7 +140,7 @@ if (mode === 'install') {
     }
     run(join(buildTools, process.platform === 'win32' ? 'apksigner.bat' : 'apksigner'), ['verify', apk]);
     const hash = createHash('sha256').update(readFileSync(apk)).digest('hex');
-    const releaseDirectory = resolve(mobileDirectory, '../releases');
+    const releaseDirectory = resolve(projectDirectory, 'releases');
     mkdirSync(releaseDirectory, { recursive: true });
     const destination = join(releaseDirectory, `pinxiaotu-${mode}-v${output.versionName}+${output.versionCode}-${hash.slice(0, 8)}.apk`);
     copyFileSync(apk, destination);

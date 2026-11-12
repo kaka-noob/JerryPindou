@@ -1,6 +1,6 @@
 // 本文件配置 Pindo 原生应用名称、安装标识、图标和系统权限说明。
 import type { ExpoConfig } from 'expo/config';
-import { version, buildNumber } from '../package.json';
+import { version, buildNumber } from './package.json';
 
 const config: ExpoConfig = {
   name: '拼小兔',
