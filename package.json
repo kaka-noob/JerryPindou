@@ -46,11 +46,13 @@
     "vitest": "^4.1.12"
   },
   "private": true,
-  "version": "1.0.6",
-  "buildNumber": 7,
+  "version": "1.0.12",
+  "buildNumber": 13,
   "scripts": {
     "android": "node scripts/android.mjs install",
     "release": "node scripts/android.mjs release",
-    "debug": "node scripts/android.mjs debug"
+    "debug": "node scripts/android.mjs debug",
+    "lint": "expo lint",
+    "test": "vitest run"
   }
 }

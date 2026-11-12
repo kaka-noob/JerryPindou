@@ -34,7 +34,7 @@ export function EditImage() {
       if (operation !== 'confirm') { reset(result); return; }
       // 将确认图片移到持久目录，避免系统清理缓存后草稿无法重新生成。
       const file = new File(Paths.document, `pindo-source-${Date.now()}.png`);
-      new File(result.uri).copy(file);
+      await new File(result.uri).copy(file);
       const source = { ...result, uri: file.uri };
       studio.setConversion(previous => ({ ...previous, source, settings: { ...previous.settings,
         ...fitSize(Math.max(previous.settings.width, previous.settings.height), source.width, source.height) } }));

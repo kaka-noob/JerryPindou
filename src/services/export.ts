@@ -9,23 +9,28 @@ import { chartPng } from './drawing';
 import { getPalette, BRANDS } from './pattern';
 import { calculateUsage } from '@/lib/utils/usage-calculator';
 import { imageFilename } from './export-filename';
+import { getImageVariants, type ImageVariant } from './image-variants';
 
-// 将带网格图例的 PNG 写入缓存目录。
-function imageFile(pattern: BeadPattern, palette: CompiledBeadColor[], display: { grid?: boolean; codes?: boolean } = {}) {
-  const file = new File(Paths.cache, imageFilename());
-  file.write(chartPng(pattern, palette, display), { encoding: 'base64' });
+// 将指定原图或镜像图写入缓存目录。
+async function imageFile(pattern: BeadPattern, palette: CompiledBeadColor[], display: { grid?: boolean; codes?: boolean; mirror?: boolean } = {}, variant?: ImageVariant) {
+  const file = new File(Paths.cache, imageFilename(new Date(), variant));
+  await file.write(chartPng(pattern, palette, display), { encoding: 'base64' });
   return file;
 }
 
 // 请求仅保存照片所需的权限后保存 PNG，拒绝授权时保留明确错误。
-export async function saveImage(pattern: BeadPattern, palette: CompiledBeadColor[], display: { grid?: boolean; codes?: boolean } = {}) {
+export async function saveImage(pattern: BeadPattern, palette: CompiledBeadColor[], display: { grid?: boolean; codes?: boolean; mirror?: boolean } = {}) {
   const permission = await MediaLibrary.requestPermissionsAsync(true);
   if (!permission.granted) throw new Error('需要允许保存图片到相册，也可以使用“分享 PNG”。');
-  const file = imageFile(pattern, palette, display);
-  const filename = file.name;
-  try { await MediaLibrary.Asset.create(file.uri); }
-  finally { if (file.exists) file.delete(); }
-  return filename;
+  const variants = getImageVariants(!!display.mirror);
+  const filenames: string[] = [];
+  for (const variant of variants) {
+    const file = await imageFile(pattern, palette, { ...display, mirror: variant === 'mirror' }, variants.length > 1 ? variant : undefined);
+    filenames.push(file.name);
+    try { await MediaLibrary.Asset.create(file.uri); }
+    finally { if (file.exists) file.delete(); }
+  }
+  return filenames;
 }
 
 // 调用系统分享面板发送真实导出文件。
@@ -36,7 +41,8 @@ export async function shareFile(uri: string, mimeType: string) {
 
 // 分享包含网格、色号和用量图例的 PNG。
 export async function shareImage(pattern: BeadPattern, palette: CompiledBeadColor[]) {
-  await shareFile(imageFile(pattern, palette).uri, 'image/png');
+  const file = await imageFile(pattern, palette);
+  await shareFile(file.uri, 'image/png');
 }
 
 // 通过系统打印引擎生成包含完整图纸的 PDF 后分享。
@@ -45,14 +51,14 @@ export async function sharePdf(pattern: BeadPattern, palette: CompiledBeadColor[
   if (!document.base64) throw new Error('PDF 生成失败，请重试。');
   // 将打印结果写入本应用缓存，兼容 Expo Go 的工程目录隔离。
   const file = new File(Paths.cache, `pindo-${Date.now()}.pdf`);
-  file.write(document.base64, { encoding: 'base64' });
+  await file.write(document.base64, { encoding: 'base64' });
   await shareFile(file.uri, 'application/pdf');
 }
 
 // 将可再次编辑的工程保存为标准 JSON 文件并分享。
 export async function shareProject(pattern: BeadPattern, completed: string[], elapsed: number) {
   const file = new File(Paths.cache, `pindo-${Date.now()}.json`);
-  file.write(JSON.stringify({ pattern, completed, elapsed }));
+  await file.write(JSON.stringify({ pattern, completed, elapsed }));
   await shareFile(file.uri, 'application/json');
 }
 
@@ -61,7 +67,7 @@ export async function shareUsage(pattern: BeadPattern, palette: CompiledBeadColo
   const rows = calculateUsage(pattern, palette).map(item => [item.color.code, item.color.name, item.count]
     .map(value => `"${String(value).replace(/"/g, '""')}"`).join(','));
   const file = new File(Paths.cache, `pindo-usage-${Date.now()}.csv`);
-  file.write(['色号,名称,颗数', ...rows].join('\r\n'));
+  await file.write(['色号,名称,颗数', ...rows].join('\r\n'));
   await shareFile(file.uri, 'text/csv');
 }
 

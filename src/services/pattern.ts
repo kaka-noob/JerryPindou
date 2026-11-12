@@ -39,7 +39,7 @@ export interface Settings {
   saturation: number;
 }
 export const DEFAULT_SETTINGS: Settings = {
-  brand: 'mard', width: 58, height: 58, lockRatio: true, maxColors: 16,
+  brand: 'mard', width: 58, height: 58, lockRatio: true, maxColors: 60,
   creative: 'fine', dithering: 'none', background: 'white', excluded: [], autoGrid: true,
   brightness: 0, contrast: 0, saturation: 0,
 };
@@ -77,6 +77,7 @@ export async function createPatternAsync(source: PatternPixels, settings: Settin
   }
 }
 
+// 分步处理像素、限色和图纸数据，预览与最终生成共用同一算法。
 function* patternSteps(source: PatternPixels, settings: Settings, mode: WorkMode) {
   let palette = getPalette(settings.brand).filter(color => !settings.excluded.includes(color.id));
   if (!palette.length) throw new Error('至少保留一种可用颜色。');
@@ -104,6 +105,11 @@ function* patternSteps(source: PatternPixels, settings: Settings, mode: WorkMode
   const pixels = adjustPixels(yield* downscaleSteps(prepared.data, prepared.width, prepared.height,
     settings.width, settings.height, preset.pixMode, optimize ? { edgeLumaDelta: 10, dominantFill: true } : undefined),
   settings.brightness, preset.contrast + settings.contrast, preset.saturation + settings.saturation);
+  // 透明格不参与限色统计，避免背景挤占主体颜色名额。
+  const empty = pixels.map((_, index) => settings.background === 'transparent' && source.data[(
+    Math.min(source.height - 1, Math.floor((Math.floor(index / settings.width) + 0.5) * source.height / settings.height)) * source.width
+    + Math.min(source.width - 1, Math.floor((index % settings.width + 0.5) * source.width / settings.width))) * 4 + 3] < 20);
+  const bayer = [0, 8, 2, 10, 12, 4, 14, 6, 3, 11, 1, 9, 15, 7, 13, 5];
   // 将匹配函数绑定到当前色板，限制颜色后再执行一次抖动。
   function* matchedPixels() {
     const buffer = pixels.map(pixel => ({ ...pixel }));
@@ -113,14 +119,16 @@ function* patternSteps(source: PatternPixels, settings: Settings, mode: WorkMode
       if (index % 8 === 0) yield;
       const old = buffer[index];
       // 有序抖动采用 4×4 Bayer 阈值；误差扩散保留行间依赖。
-      const bayer = [0, 8, 2, 10, 12, 4, 14, 6, 3, 11, 1, 9, 15, 7, 13, 5];
       const delta = settings.dithering === 'ordered' ? (bayer[(Math.floor(index / settings.width) % 4) * 4 + index % settings.width % 4] - 7.5) * 2 : 0;
       const pixel = { r: Math.max(0, Math.min(255, old.r + delta)), g: Math.max(0, Math.min(255, old.g + delta)), b: Math.max(0, Math.min(255, old.b + delta)) };
       const key = `${pixel.r},${pixel.g},${pixel.b}`;
-      const color = cache.get(key) || matchColor(pixel, palette);
-      cache.set(key, color); result.push(color);
-      if (settings.dithering !== 'floyd-steinberg') continue;
+      const color = empty[index] ? palette[0] : cache.get(key) || matchColor(pixel, palette);
+      if (!empty[index]) cache.set(key, color);
+      result.push(color);
+      if (settings.dithering !== 'floyd-steinberg' || empty[index]) continue;
+      // 只向实际存在的图案格子扩散误差，不穿过透明区域。
       const spread = (target: number, weight: number) => {
+        if (empty[target]) return;
         const next = buffer[target];
         for (const [channel, value] of [['r', color.rgb[0]], ['g', color.rgb[1]], ['b', color.rgb[2]]] as const) {
           next[channel] = Math.max(0, Math.min(255, Math.round(next[channel] + (old[channel] - value) * weight)));
@@ -137,13 +145,15 @@ function* patternSteps(source: PatternPixels, settings: Settings, mode: WorkMode
     return result;
   }
   let matched = yield* matchedPixels();
-  const limited = limitPaletteWithKeyColors(palette, buildUsageMap(matched), Math.min(settings.maxColors, palette.length));
-  palette = limited.limitedPalette;
-  matched = yield* matchedPixels();
+  const limited = limitPaletteWithKeyColors(palette, buildUsageMap(matched.filter((_, index) => !empty[index])), Math.min(settings.maxColors, palette.length));
+  const retained = new Set(limited.limitedPalette.map(color => color.id));
+  // 未损失已匹配色时复用第一遍结果；发生限色或启用抖动时保持完整重算。
+  const unchanged = settings.dithering === 'none' && matched.every((color, index) => empty[index] || retained.has(color.id));
+  palette = limited.limitedPalette.length ? limited.limitedPalette : [palette[0]];
+  if (!unchanged) matched = yield* matchedPixels();
   let cells = Array.from({ length: settings.height }, (_, row) => Array.from({ length: settings.width }, (_, col) => ({
-    colorId: matched[row * settings.width + col].id,
-    ...(settings.background === 'transparent' && source.data[(Math.min(source.height - 1, Math.floor((row + 0.5) * source.height / settings.height)) * source.width
-      + Math.min(source.width - 1, Math.floor((col + 0.5) * source.width / settings.width))) * 4 + 3] < 20 ? { isEmpty: true } : {}),
+    colorId: empty[row * settings.width + col] ? palette[0].id : matched[row * settings.width + col].id,
+    ...(empty[row * settings.width + col] ? { isEmpty: true } : {}),
   })));
   if (optimize) {
     const luma = new Map(palette.map(color => [color.id, 0.2126 * color.rgb[0] + 0.7152 * color.rgb[1] + 0.0722 * color.rgb[2]]));

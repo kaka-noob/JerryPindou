@@ -39,26 +39,50 @@ export function NumberField({ title, value, onChange }: { title: string; value: 
 }
 
 // 每个参数独占一行，拖动时展示整数值并沿用页面的预览更新队列。
+// 正负参数以零点为起点显示变化，避免默认零值呈现半条进度。
 export function SliderField({ title, value, minimum, maximum, onChange }: {
   title: string; value: number; minimum: number; maximum: number; onChange: (value: number) => void;
 }) {
+  const bipolar = minimum < 0 && maximum > 0;
+  const zero = -minimum / (maximum - minimum) * 100;
+  const position = (value - minimum) / (maximum - minimum) * 100;
   return <View style={styles.sliderRow}>
     <Text style={styles.sliderLabel}>{title}</Text>
+    <View style={styles.sliderControl}>
     <Slider accessibilityLabel={title} accessibilityValue={{ min: minimum, max: maximum, now: value }}
-      value={value} minimumValue={minimum} maximumValue={maximum} step={1} thumbSize={22} tapToSeek
-      minimumTrackTintColor="#df4b89" maximumTrackTintColor="#eadfe5" thumbTintColor="#df4b89" style={styles.slider}
+      value={value} minimumValue={minimum} maximumValue={Math.max(minimum + 1, maximum)} disabled={maximum <= minimum} step={1} thumbSize={22} tapToSeek
+      minimumTrackTintColor={bipolar ? '#eadfe5' : '#df4b89'} maximumTrackTintColor="#eadfe5" thumbTintColor="#df4b89" style={styles.slider}
       onValueChange={next => {
         const rounded = Math.max(minimum, Math.min(maximum, Math.round(next)));
         if (rounded !== value) onChange(rounded);
       }} />
-    <Text style={styles.sliderValue}>{value}</Text>
+      {bipolar && <View pointerEvents="none" style={styles.signedTrack}>
+        {/* 有色区间只连接零点和当前值；零值时宽度为零。 */}
+        <View style={[styles.signedFill, { left: `${Math.min(zero, position)}%`, width: `${Math.abs(position - zero)}%` }]} />
+        {/* 中央刻度明确标识零点。 */}
+        <View style={[styles.zeroTick, { left: `${zero}%` }]} />
+      </View>}
+    </View>
+    <Text style={styles.sliderValue}>{bipolar && value > 0 ? '+' : ''}{value}</Text>
   </View>;
 }
 
 const styles = StyleSheet.create({
+  // 参数标签、滑块和数值使用横向弹性布局。
   sliderRow: { flexDirection: 'row', alignItems: 'center', gap: 8, minHeight: 48 },
+  // 标签固定宽度以便各行轨道对齐。
   sliderLabel: { width: 68, color: '#614555', fontSize: 14 },
+  // 滑块容器为零点刻度提供定位基准。
+  sliderControl: { flex: 1, minHeight: 48, justifyContent: 'center' },
+  // 原生滑块填满中间可用空间。
   slider: { flex: 1, minHeight: 48 },
+  // 正负参数的辅助轨道避开两端滑块半径。
+  signedTrack: { position: 'absolute', left: 16, right: 16, top: 23, height: 2 },
+  // 从零点到当前值绘制实际调整区间。
+  signedFill: { position: 'absolute', height: 2, backgroundColor: '#df4b89' },
+  // 零点使用细刻度，便于辨认原样位置。
+  zeroTick: { position: 'absolute', top: -15, height: 4, width: 1, backgroundColor: '#b69aa8' },
+  // 数值使用等宽数字，并预留正负号空间。
   sliderValue: { width: 36, textAlign: 'right', color: '#614555', fontSize: 14, fontVariant: ['tabular-nums'] },
   // 按钮提供至少四十四点的触摸高度。
   button: { minHeight: 44, paddingHorizontal: 14, paddingVertical: 11, borderRadius: 12, backgroundColor: '#f9eaf2', justifyContent: 'center' },
