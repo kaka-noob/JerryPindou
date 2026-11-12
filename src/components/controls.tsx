@@ -46,8 +46,15 @@ export function SliderField({ title, value, minimum, maximum, onChange }: {
   const bipolar = minimum < 0 && maximum > 0;
   const zero = -minimum / (maximum - minimum) * 100;
   const position = (value - minimum) / (maximum - minimum) * 100;
+  // 每次按步进一格；到达边界时保持原值，按钮仍可点击。
+  function adjust(delta: number) {
+    const next = Math.max(minimum, Math.min(maximum, value + delta));
+    if (next !== value) onChange(next);
+  }
   return <View style={styles.sliderRow}>
     <Text style={styles.sliderLabel}>{title}</Text>
+    <Pressable accessibilityRole="button" accessibilityLabel={`${title}减一`} hitSlop={6}
+      onPress={() => adjust(-1)} style={styles.stepButton}><Text style={styles.stepButtonText}>-</Text></Pressable>
     <View style={styles.sliderControl}>
     <Slider accessibilityLabel={title} accessibilityValue={{ min: minimum, max: maximum, now: value }}
       value={value} minimumValue={minimum} maximumValue={Math.max(minimum + 1, maximum)} disabled={maximum <= minimum} step={1} thumbSize={22} tapToSeek
@@ -63,15 +70,21 @@ export function SliderField({ title, value, minimum, maximum, onChange }: {
         <View style={[styles.zeroTick, { left: `${zero}%` }]} />
       </View>}
     </View>
+    <Pressable accessibilityRole="button" accessibilityLabel={`${title}加一`} hitSlop={6}
+      onPress={() => adjust(1)} style={styles.stepButton}><Text style={styles.stepButtonText}>+</Text></Pressable>
     <Text style={styles.sliderValue}>{bipolar && value > 0 ? '+' : ''}{value}</Text>
   </View>;
 }
 
 const styles = StyleSheet.create({
   // 参数标签、滑块和数值使用横向弹性布局。
-  sliderRow: { flexDirection: 'row', alignItems: 'center', gap: 8, minHeight: 48 },
+  sliderRow: { flexDirection: 'row', alignItems: 'center', gap: 5, minHeight: 48 },
   // 标签固定宽度以便各行轨道对齐。
   sliderLabel: { width: 68, color: '#614555', fontSize: 14 },
+  // 滑块两侧步进按钮使用固定尺寸，保留稳定触摸区域。
+  stepButton: { width: 24, height: 32, alignItems: 'center', justifyContent: 'center' },
+  // 加减符号清晰显示但不抢占数值层级。
+  stepButtonText: { color: '#896b7a', fontSize: 18, fontWeight: '600', textAlign: 'center' },
   // 滑块容器为零点刻度提供定位基准。
   sliderControl: { flex: 1, minHeight: 48, justifyContent: 'center' },
   // 原生滑块填满中间可用空间。

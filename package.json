@@ -46,8 +46,8 @@
     "vitest": "^4.1.12"
   },
   "private": true,
-  "version": "1.0.12",
-  "buildNumber": 13,
+  "version": "1.0.15",
+  "buildNumber": 16,
   "scripts": {
     "android": "node scripts/android.mjs install",
     "release": "node scripts/android.mjs release",

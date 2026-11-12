@@ -28,9 +28,11 @@ export function Parameters() {
   const [preview, setPreview] = useState<{ result: Result; key: string } | null>(null);
   const [failure, setFailure] = useState<{ message: string; key: string } | null>(null);
   const [generating, setGenerating] = useState(false);
+  const lastAction = useRef(0);
   const key = JSON.stringify(conversion);
   const latest = useRef({ conversion, key });
   const running = useRef<Job | null>(null);
+  const autoPreviewSource = useRef<string | null>(null);
   const previewRef = useRef(preview);
   const applyRef = useRef(apply);
   useLayoutEffect(() => {
@@ -72,6 +74,8 @@ export function Parameters() {
   const sourceUri = source?.uri;
   useEffect(() => {
     if (!focused || !sourceUri || !studio.ready) return;
+    if (autoPreviewSource.current === sourceUri) return;
+    autoPreviewSource.current = sourceUri;
     const current = latest.current;
     if (previewRef.current?.key === current.key) return;
     const worker = queue.current!;
@@ -89,12 +93,24 @@ export function Parameters() {
       return { ...previous, settings };
     });
   }
-  // 主动提交当前快照，避免连续点击产生重复计算。
-  function generate(advance = false) {
-    if (!source || running.current) return;
+  // 忽略六百毫秒内的重复操作，节流后接受下一次预览请求。
+  function allowAction() {
+    const now = Date.now();
+    if (now - lastAction.current < 600) return false;
+    lastAction.current = now;
+    return true;
+  }
+  // 提交当前参数快照；队列会合并快速重复请求并取消过期结果。
+  function queueGeneration(advance = false) {
+    if (!source) return;
     const job = { conversion, key, advance };
     running.current = job; setGenerating(true); setFailure(null);
     queue.current?.request(job, 0);
+  }
+  // 预览按钮经过节流后生成当前参数图纸。
+  function generate() {
+    if (!source || !allowAction()) return;
+    queueGeneration();
   }
   // 只将仍与当前参数一致的成功图纸写入工作台。
   function apply(result: Result, resultKey: string) {
@@ -104,12 +120,12 @@ export function Parameters() {
   }
   // 先确认草稿替换，再复用当前预览或生成最新图纸后进入下一步。
   function next() {
-    if (!source || running.current) return;
+    if (!source || !allowAction()) return;
     // 系统确认框停留期间参数可能变化，提交前再次核对快照。
     const proceed = () => {
       if (latest.current.key !== key) return;
       if (fresh && preview) apply(preview.result, key);
-      else generate(true);
+      else queueGeneration(true);
     };
     if (studio.drafts.conversion && (studio.drafts.conversion.edited || studio.drafts.conversion.completed.length > 0 || studio.drafts.conversion.elapsed > 0)) {
       Alert.alert('应用新图纸？', '重新生成将覆盖格子编辑和拼豆进度。原作品在确认前仍会保留。', [
@@ -119,6 +135,7 @@ export function Parameters() {
   }
   const palette = getPalette(settings.brand);
   const availableColors = Math.max(1, palette.filter(color => !settings.excluded.includes(color.id)).length);
+  const visiblePreview = preview ?? previewRef.current;
   const colors = palette.filter(color => `${color.code} ${color.name}`.toLowerCase().includes(search.toLowerCase()));
   const series = [...new Set(palette.map(color => color.code.match(/^[^\d]+/)?.[0] || color.code[0]))];
   // 按色号前缀批量排除或恢复颜色。
@@ -128,21 +145,21 @@ export function Parameters() {
   }
   return <Page title="调出你的拼豆配色" footer={
     /* 底部两个操作用弹性布局共享宽度，适应不同设备。 */
-    <View style={ui.row}><View style={{ flex: 1 }}><Action title={generating ? '生成中…' : '预览'} disabled={!source || generating} onPress={() => generate()} /></View>
-      <View style={{ flex: 1.5 }}><Action title={generating ? '正在生成…' : '下一步 →'} active disabled={!source || generating} onPress={next} /></View></View>}>
+    <View style={ui.row}><View style={{ flex: 1 }}><Action title="预览" disabled={!source} onPress={generate} /></View>
+      <View style={{ flex: 1.5 }}><Action title="下一步 →" active disabled={!source} onPress={next} /></View></View>}>
     {!source ? <Text style={ui.note}>请返回首页选择图片。</Text> : <>
       <View style={{ flexDirection: 'row', alignItems: 'flex-start', gap: 10 }}>
         <View style={{ flex: 1, gap: 10 }}><Text style={ui.label}>原图</Text><Image source={{ uri: source.uri }} resizeMode="contain" style={{ width: '100%', height: 175, borderRadius: 14, backgroundColor: '#ffffff' }} />
           <Action title="重新编辑" onPress={() => { studio.setPendingImage(source); router.push('/image-edit'); }} /></View>
         <View style={{ flex: 2.2, gap: 10 }}><Text style={ui.label}>效果预览</Text>
           <View style={{ minHeight: 280 }}>
-            {preview ? <PatternBoard pattern={preview.result.pattern} palette={preview.result.palette} height={230} /> : <View style={{ height: 280, backgroundColor: '#ffffff', borderRadius: 14 }} />}
-            {generating && <View pointerEvents="none" style={{ position: 'absolute', inset: 0, backgroundColor: '#ffffffbb', justifyContent: 'center', alignItems: 'center', gap: 10, borderRadius: 14 }}>
-              <ActivityIndicator color="#df4b89" /><Text style={ui.note}>图纸生成中</Text></View>}
+            {visiblePreview ? <PatternBoard pattern={visiblePreview.result.pattern} palette={visiblePreview.result.palette} height={230} /> : <View style={{ height: 280, backgroundColor: '#ffffff', borderRadius: 14 }} />}
+            {generating && <View pointerEvents="none" style={{ position: 'absolute', inset: 0, backgroundColor: '#ffffff55', justifyContent: 'center', alignItems: 'center', gap: 10, borderRadius: 14 }}>
+              <ActivityIndicator color="#df4b89" /><Text style={ui.note}>图纸生成中...</Text></View>}
           </View></View>
       </View>
       {failure?.key === key && <View style={{ gap: 10 }}><Text accessibilityRole="alert" style={ui.error}>{failure.message}</Text><Action title="重试生成" onPress={() => generate()} /></View>}
-      <Text style={ui.note}>{settings.width} × {settings.height} 颗 · {fresh ? '预览已更新，双指操作效果图。' : generating ? '正在生成当前参数的图纸…' : '参数已修改，点击预览或下一步生成。'}</Text>
+      <Text style={ui.note}>{settings.width} × {settings.height} 颗 · {fresh ? '预览已更新，双指操作效果图。' : '参数已修改，点击预览或下一步生成。'}</Text>
       <Section title="图纸参数">
         <Text style={ui.label}>拼豆品牌</Text><Choices items={BRANDS} value={settings.brand} onChange={brand => change({ brand, excluded: [], maxColors: Math.min(settings.maxColors, getPalette(brand).length) })} />
         <View style={{ backgroundColor: '#fdf8fb', borderRadius: 14, paddingHorizontal: 12, paddingVertical: 8, gap: 2 }}>
